@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
-import { GoogleGenAI } from '@google/genai';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const ai = new GoogleGenAI({ apiKey: process.env.EXPO_PUBLIC_GEMINI_API_KEY });
 const STORAGE_KEY = '@korean_notes_data';
 
 export default function HomeScreen() {
@@ -32,34 +30,75 @@ export default function HomeScreen() {
         Analiza la siguiente palabra o nota de coreano: "${inputWord}".
         Clasifícala en una categoría temática adecuada en Español (por ejemplo: Comida, Verbos, Saludos, Viajes, etc.).
         Asigna también un único emoji representativo para ese tema (por ejemplo 👋 para Saludos, 🍔 para Comida). Si no hay un emoji claro, déjalo en blanco.
-        Para la "pronunciacion", redacta una guía completa, ordenada y estructurada que incluya obligatoriamente:
-        1. La pronunciación de la palabra principal de forma fluida y continua entre paréntesis (sin guiones por sílabas).
-        2. La pronunciación de la oración o frase de ejemplo completa de forma fluida y continua entre paréntesis.
-        3. Breves tips de fonética o aclaraciones útiles.
-        Escríbelo de forma muy clara indicando a qué corresponde cada una (por ejemplo: "Para la palabra principal..." y "Para la frase de ejemplo...").
+        Para la "pronunciacion" (romanización y guía), redacta una explicación completa y ordenada que incluya:
+        1. La romanización de la palabra principal.
+        2. La romanización de la oración o frase de ejemplo.
+        3. Breves tips de pronunciación o fonética útiles.
 
         Devuelve la respuesta estrictamente en formato JSON plano con las siguientes llaves exactas:
         {
           "tema": "Nombre del tema",
           "emoji": "Emoji representativo o vacío",
-          "palabraCoreana": "La palabra o frase en coreano",
+          "palabraCoreana": "La palabra o frase en coreano (Hangul)",
           "significado": "Significado en español",
           "fraseEjemplo": "Oración corta de ejemplo en coreano usando la palabra",
           "significadoFrase": "Traducción de la frase al español",
-          "pronunciacion": "Guía detallada explicando la pronunciación tanto de la palabra como de la frase de ejemplo"
+          "pronunciacion": "Guía detallada explicando la romanización y pronunciación"
         }
       `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: prompt,
-      });
+      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+      
+      let response;
+      let data;
+      let intentos = 3;
 
-      const textResponse = response.text;
+      for (let i = 0; i < intentos; i++) {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                responseMimeType: "application/json"
+              }
+            }),
+          }
+        );
+
+        data = await response.json();
+
+        if (!data.error) break;
+
+        // Detección de límite agotado o cuota excedida (Error 429)
+        if (data.error.code === 429 || data.error.status === 'RESOURCE_EXHAUSTED') {
+          throw new Error("Límite diario de peticiones alcanzado. Por favor, intenta de nuevo mañana o más tarde.");
+        }
+
+        // Si el error es por alta demanda, reintentamos automáticamente
+        if (data.error.code === 503 || data.error.message?.includes('high demand')) {
+          if (i < intentos - 1) {
+            console.log(`Servidor ocupado, reintentando automáticamente (${i + 1}/${intentos})...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue;
+          }
+        }
+        
+        break;
+      }
+
+      if (data.error) {
+        throw new Error(data.error.message || "Error al comunicarse con la IA");
+      }
+
+      const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!textResponse) throw new Error("No se obtuvo respuesta de la IA");
 
-      const cleanedJson = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsedData = JSON.parse(cleanedJson);
+      const parsedData = JSON.parse(textResponse);
 
       const existingDataJSON = await AsyncStorage.getItem(STORAGE_KEY);
       const existingData = existingDataJSON ? JSON.parse(existingDataJSON) : [];
@@ -82,9 +121,9 @@ export default function HomeScreen() {
 
       setInputWord('');
       showAlert("¡Éxito!", "¡Palabra guardada y organizada por la IA con éxito!", "success");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error al procesar con Gemini:", error);
-      showAlert("¡Error!", "Hubo un error al clasificar la palabra con la IA.", "error");
+      showAlert("¡Límite o Error!", error.message || "Hubo un error al clasificar la palabra con la IA.", "error");
     } finally {
       setLoading(false);
     }
@@ -103,7 +142,7 @@ export default function HomeScreen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Ej: Annyeonghaseyo o Comprar boletos"
+          placeholder="Ejemplo: '안녕하세요'"
           placeholderTextColor="#666"
           value={inputWord}
           onChangeText={setInputWord}
@@ -145,13 +184,11 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: 
-  { 
+  container: { 
     flex: 1, 
     backgroundColor: '#000' 
   },
-  inner: 
-  { 
+  inner: { 
     flex: 1, 
     padding: 24, 
     justifyContent: 'center', 
@@ -159,24 +196,21 @@ const styles = StyleSheet.create({
     width: '100%', 
     alignSelf: 'center' 
   },
-  title: 
-  { 
+  title: { 
     fontSize: 32, 
     fontWeight: 'bold', 
     color: '#fff', 
     marginBottom: 12, 
     textAlign: 'center' 
   },
-  subtitle: 
-  { 
+  subtitle: { 
     fontSize: 15, 
     color: '#aaa', 
     marginBottom: 28, 
     textAlign: 'center', 
     lineHeight: 22 
   },
-  input: 
-  { 
+  input: { 
     backgroundColor: '#121212', 
     color: '#fff', 
     padding: 16, 
@@ -188,33 +222,28 @@ const styles = StyleSheet.create({
     minHeight: 100,
     textAlignVertical: 'top'
   },
-  button: 
-  { 
+  button: { 
     backgroundColor: '#208AEF', 
     padding: 16, 
     borderRadius: 12, 
     alignItems: 'center' 
   },
-  buttonDisabled: 
-  { 
+  buttonDisabled: { 
     opacity: 0.6 
   },
-  buttonText: 
-  { 
+  buttonText: { 
     color: '#fff', 
     fontWeight: 'bold', 
     fontSize: 16 
   },
-  modalOverlay: 
-  { 
+  modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(0,0,0,0.8)', 
     justifyContent: 'center', 
     alignItems: 'center', 
     padding: 20 
   },
-  modalContainer: 
-  { 
+  modalContainer: { 
     backgroundColor: '#181818', 
     borderRadius: 16, 
     padding: 24, 
@@ -224,30 +253,26 @@ const styles = StyleSheet.create({
     borderColor: '#333', 
     alignItems: 'center' 
   },
-  modalTitle: 
-  { 
+  modalTitle: { 
     fontSize: 20, 
     fontWeight: 'bold', 
     marginBottom: 12 
   },
-  modalMessage: 
-  { 
+  modalMessage: { 
     color: '#ddd', 
     fontSize: 15, 
     textAlign: 'center', 
     marginBottom: 20, 
     lineHeight: 22 
   },
-  modalButton: 
-  { 
+  modalButton: { 
     paddingVertical: 12, 
     paddingHorizontal: 30, 
     borderRadius: 10, 
     width: '100%', 
     alignItems: 'center' 
   },
-  modalButtonText: 
-  { 
+  modalButtonText: { 
     color: '#fff', 
     fontWeight: 'bold', 
     fontSize: 16 
