@@ -42,7 +42,9 @@
       "router": {},
       "eas": {
         "projectId": "1dbb19ae-d4f3-4409-b0d8-d5185a361a27"
-      }
+      },
+      "EXPO_PUBLIC_GROQ_API_KEY": "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",
+      "EXPO_PUBLIC_GROQ_MODEL": "qwen/qwen3.8-27b"
     }
   }
 }

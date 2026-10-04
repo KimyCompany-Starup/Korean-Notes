@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Text, View, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { styles } from '../styles';
 
 const STORAGE_KEY = '@korean_notes_data';
 
-// --- Configuración Dinámica para Groq ---
+// --- Configuración Dinámica y Robusta para Groq ---
 const getGroqConfig = () => {
-  const apiKey = (process.env.EXPO_PUBLIC_GROQ_API_KEY || "").trim();
-  const model = (process.env.EXPO_PUBLIC_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
+  const extra = Constants.expoConfig?.extra || {};
+  const apiKey = (extra.EXPO_PUBLIC_GROQ_API_KEY || process.env.EXPO_PUBLIC_GROQ_API_KEY || "").trim();
+  const model = (extra.EXPO_PUBLIC_GROQ_MODEL || process.env.EXPO_PUBLIC_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
 
   return { apiKey, model };
 };
@@ -17,6 +19,7 @@ export default function HomeScreen() {
   const [inputWord, setInputWord] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Estados para el Modal de Alerta Personalizada
   const [modalVisible, setModalVisible] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
@@ -34,7 +37,7 @@ export default function HomeScreen() {
 
     const { apiKey, model } = getGroqConfig();
     if (!apiKey) {
-      showAlert("Falta Configuración", "Por favor configura tu API Key de Groq en tu archivo .env.", "error");
+      showAlert("Falta Configuración", "Por favor configura tu API Key de Groq en el app.json.", "error");
       return;
     }
 
@@ -97,6 +100,7 @@ export default function HomeScreen() {
       const existingDataJSON = await AsyncStorage.getItem(STORAGE_KEY);
       const existingData = existingDataJSON ? JSON.parse(existingDataJSON) : [];
       
+      // --- VALIDACIÓN DE DUPLICADOS ---
       const palabraNueva = parsedData.palabraCoreana.trim().toLowerCase();
       const yaExiste = existingData.some(
         (nota: any) => nota.palabraCoreana.trim().toLowerCase() === palabraNueva
@@ -107,6 +111,7 @@ export default function HomeScreen() {
         showAlert("Palabra duplicada", "Esa palabra ya está guardada en tus notas de coreano.", "error");
         return;
       }
+      // --------------------------------
 
       const newData = [parsedData, ...existingData];
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
@@ -154,6 +159,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Modal de Alerta Personalizada (Modo Oscuro) */}
       <Modal transparent={true} visible={modalVisible} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
