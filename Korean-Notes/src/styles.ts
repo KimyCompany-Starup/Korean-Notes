@@ -7,8 +7,26 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212', // Fondo oscuro moderno
   },
+  inner: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+  },
   safeArea: {
     flex: 1,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginBottom: 24,
   },
   header: {
     paddingHorizontal: 20,
@@ -57,9 +75,11 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     borderWidth: 1,
     borderColor: '#3A3A3A',
-    marginBottom: 12,
+    marginBottom: 16,
+    minHeight: 100,
+    textAlignVertical: 'top',
   },
-  buttonPrimary: {
+  button: {
     backgroundColor: '#6366F1', // Tono indigo moderno
     borderRadius: 12,
     paddingVertical: 14,
@@ -70,6 +90,10 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 6,
     elevation: 6,
+  },
+  buttonDisabled: {
+    backgroundColor: '#4B5563',
+    opacity: 0.7,
   },
   buttonText: {
     color: '#FFFFFF',
@@ -91,5 +115,48 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#121212',
+  },
+  // Estilos para el Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: '#D1D5DB',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  modalButton: {
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
