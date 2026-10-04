@@ -2,7 +2,7 @@
   "expo": {
     "name": "Korean-Notes",
     "slug": "Korean-Notes",
-    "version": "2.0",
+    "version": "2.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "koreannotes",
@@ -32,7 +32,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
