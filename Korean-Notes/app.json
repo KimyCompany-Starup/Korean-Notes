@@ -2,14 +2,14 @@
   "expo": {
     "name": "Korean-Notes",
     "slug": "Korean-Notes",
-    "version": "2.3",
+    "version": "2.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "koreannotes",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
-    },
+  "icon": "./assets/images/icon.png"
+},
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#000000",
