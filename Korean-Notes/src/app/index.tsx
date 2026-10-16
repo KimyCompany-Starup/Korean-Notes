@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
-import { Text, View, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { 
+  Text, View, TextInput, TouchableOpacity, ActivityIndicator, 
+  KeyboardAvoidingView, Platform, Modal, ScrollView, TouchableWithoutFeedback, Keyboard, Animated 
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 import { styles } from '../styles';
 
 const STORAGE_KEY = '@korean_notes_data';
 
-// --- Configuración Dinámica y Robusta para Groq ---
+// --- Configuración Segura para Groq (exclusivamente desde .env) ---
 const getGroqConfig = () => {
-  const extra = Constants.expoConfig?.extra || {};
-  const apiKey = (extra.EXPO_PUBLIC_GROQ_API_KEY || process.env.EXPO_PUBLIC_GROQ_API_KEY || "").trim();
-  const model = (extra.EXPO_PUBLIC_GROQ_MODEL || process.env.EXPO_PUBLIC_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
+  const apiKey = (process.env.EXPO_PUBLIC_GROQ_API_KEY || "").trim();
+  const model = (process.env.EXPO_PUBLIC_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
 
   return { apiKey, model };
 };
@@ -18,8 +19,12 @@ const getGroqConfig = () => {
 export default function HomeScreen() {
   const [inputWord, setInputWord] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lastSaved, setLastSaved] = useState<any | null>(null);
 
-  // Estados para el Modal de Alerta Personalizada
+  // Animación de desvanecimiento para la tarjeta de vista previa
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Modal de Alertas
   const [modalVisible, setModalVisible] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
@@ -32,20 +37,67 @@ export default function HomeScreen() {
     setModalVisible(true);
   };
 
+  // Mostrar vista previa con Fade In y desvanecer tras 8 segundos (más tiempo para leer)
+  const triggerLastSavedAnimation = (data: any) => {
+    setLastSaved(data);
+    fadeAnim.setValue(0);
+
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
+    // Aumentado a 8 segundos para que dé tiempo de verla con calma
+    setTimeout(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 1000,
+        useNativeDriver: true,
+      }).start(() => {
+        setLastSaved(null);
+      });
+    }, 8000);
+  };
+
+  // Conversor de errores técnicos a mensajes amigables
+  const getFriendlyErrorMessage = (errorMsg: string): string => {
+    const lower = errorMsg.toLowerCase();
+    if (lower.includes('api key') || lower.includes('unauthorized') || lower.includes('401')) {
+      return "Hubo un inconveniente con el servicio de organización. Inténtalo de nuevo más tarde.";
+    }
+    if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed to fetch')) {
+      return "No pudimos conectarnos a la red. Revisa tu conexión a internet e inténtalo nuevamente.";
+    }
+    if (lower.includes('rate limit') || lower.includes('429')) {
+      return "El servicio está algo saturado en este momento. Espera unos segundos e inténtalo de nuevo.";
+    }
+    return "No pudimos procesar la palabra en este momento. Inténtalo otra vez en unos instantes.";
+  };
+
   const handleSaveWord = async () => {
-    if (!inputWord.trim()) return;
+    const cleanInput = inputWord.trim();
+    if (!cleanInput) {
+      showAlert("Campo vacío", "Escribe una palabra o frase en coreano para organizar.", "error");
+      return;
+    }
 
     const { apiKey, model } = getGroqConfig();
     if (!apiKey) {
-      showAlert("Falta Configuración", "Por favor configura tu API Key de Groq en el app.json.", "error");
+      showAlert(
+        "Servicio No Disponible", 
+        "No fue posible conectar con el servicio en este momento. Revisa tu archivo .env.", 
+        "error"
+      );
       return;
     }
 
     setLoading(true);
+    Keyboard.dismiss();
 
     try {
       const prompt = `
-        Analiza la siguiente palabra, frase o nota de coreano: "${inputWord}".
+        Analiza la siguiente palabra, frase o nota de coreano: "${cleanInput}".
         Clasifícala en una categoría temática adecuada en Español (por ejemplo: Comida, Verbos, Saludos, Viajes, Gramática, etc.).
         Asigna también un único emoji representativo para ese tema (por ejemplo 👋 para Saludos, 🍔 para Comida). Si no hay un emoji claro, déjalo en blanco.
         Para la "pronunciacion", redacta una guía completa, ordenada y estructurada que incluya obligatoriamente:
@@ -66,7 +118,7 @@ export default function HomeScreen() {
         }
       `;
 
-      let response = await fetch(
+      const response = await fetch(
         'https://api.groq.com/openai/v1/chat/completions',
         {
           method: 'POST',
@@ -86,7 +138,7 @@ export default function HomeScreen() {
         }
       );
 
-      let data = await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error?.message || "Error al comunicarse con la API de Groq");
@@ -95,32 +147,33 @@ export default function HomeScreen() {
       const textResponse = data.choices?.[0]?.message?.content;
       if (!textResponse) throw new Error("No se obtuvo respuesta de la IA");
 
-      const parsedData = JSON.parse(textResponse);
+      const cleanedJsonString = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsedData = JSON.parse(cleanedJsonString);
 
       const existingDataJSON = await AsyncStorage.getItem(STORAGE_KEY);
       const existingData = existingDataJSON ? JSON.parse(existingDataJSON) : [];
       
-      // --- VALIDACIÓN DE DUPLICADOS ---
+      // Validación de duplicados
       const palabraNueva = parsedData.palabraCoreana.trim().toLowerCase();
       const yaExiste = existingData.some(
         (nota: any) => nota.palabraCoreana.trim().toLowerCase() === palabraNueva
       );
 
       if (yaExiste) {
-        setLoading(false);
-        showAlert("Palabra duplicada", "Esa palabra ya está guardada en tus notas de coreano.", "error");
+        showAlert("Palabra duplicada", `"${parsedData.palabraCoreana}" ya está guardada en tus notas.`, "error");
         return;
       }
-      // --------------------------------
 
       const newData = [parsedData, ...existingData];
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
 
       setInputWord('');
-      showAlert("¡Éxito!", "¡Palabra guardada y organizada por la IA con éxito!", "success");
+      triggerLastSavedAnimation(parsedData);
+      showAlert("¡Guardado!", "Palabra organizada y guardada correctamente.", "success");
     } catch (error: any) {
-      console.error("Error al procesar con Groq:", error);
-      showAlert("¡Error!", error.message || "Hubo un error al clasificar la palabra con la IA.", "error");
+      console.error("Error al procesar:", error);
+      const friendlyMsg = getFriendlyErrorMessage(error.message || "");
+      showAlert("Atención", friendlyMsg, "error");
     } finally {
       setLoading(false);
     }
@@ -131,35 +184,50 @@ export default function HomeScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
       style={styles.container}
     >
-      <View style={styles.inner}>
-        <Text style={styles.title}>Korean Notes 🇰🇷</Text>
-        <Text style={styles.subtitle}>
-          Escribe una palabra, verbo o frase en coreano. La IA la clasificará automáticamente en tu libreta.
-        </Text>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
+          <View style={styles.inner}>
+            <Text style={styles.title}>Korean Notes 🇰🇷</Text>
+            <Text style={styles.subtitle}>
+              Escribe una palabra, verbo o frase en coreano. La IA la clasificará automáticamente en tu libreta.
+            </Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Ejemplo: '안녕하세요' o '저는 학생이에요'"
-          placeholderTextColor="#666"
-          value={inputWord}
-          onChangeText={setInputWord}
-          multiline
-        />
+            <TextInput
+              style={styles.input}
+              placeholder="Ejemplo: '안녕하세요' o '저는 학생이에요'"
+              placeholderTextColor="#666"
+              value={inputWord}
+              onChangeText={setInputWord}
+              multiline
+            />
 
-        <TouchableOpacity 
-          style={[styles.button, loading && styles.buttonDisabled]} 
-          onPress={handleSaveWord} 
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Organizar con IA</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+            <TouchableOpacity 
+              style={[styles.button, loading && styles.buttonDisabled]} 
+              onPress={handleSaveWord} 
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Organizar con IA</Text>
+              )}
+            </TouchableOpacity>
 
-      {/* Modal de Alerta Personalizada (Modo Oscuro) */}
+            {/* Vista previa limpia puramente informativa con mayor duración */}
+            {lastSaved && (
+              <Animated.View style={[styles.card, { marginTop: 24, opacity: fadeAnim }]}>
+                <Text style={styles.cardTitle}>
+                  {lastSaved.emoji} {lastSaved.tema} — Recién agregada
+                </Text>
+                <Text style={styles.koreanText}>{lastSaved.palabraCoreana}</Text>
+                <Text style={styles.translationText}>{lastSaved.significado}</Text>
+              </Animated.View>
+            )}
+          </View>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+
+      {/* Modal de Alerta General */}
       <Modal transparent={true} visible={modalVisible} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>

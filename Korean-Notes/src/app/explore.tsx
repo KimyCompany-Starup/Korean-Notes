@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, Platform } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, Platform, TextInput } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ export default function ExploreScreen() {
   // Estado para controlar cuáles temas están abiertos
   const [expandedThemes, setExpandedThemes] = useState<{ [key: string]: boolean }>({});
 
+  // Modales Informativos y de Eliminación
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [selectedPronunciation, setSelectedPronunciation] = useState('');
 
@@ -32,6 +33,13 @@ export default function ExploreScreen() {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
+
+  // Modal y Estados para Editar Categoría / Palabra
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingNote, setEditingNote] = useState<NotaCoreano | null>(null);
+  const [editTema, setEditTema] = useState('');
+  const [editEmoji, setEditEmoji] = useState('');
+  const [editSignificado, setEditSignificado] = useState('');
 
   const showAlert = (title: string, message: string, type: 'success' | 'error') => {
     setAlertTitle(title);
@@ -103,12 +111,66 @@ export default function ExploreScreen() {
         await AsyncStorage.setItem('@korean_notes_data', JSON.stringify(notas));
         await loadNotes();
         setDeleteModalVisible(false);
-        showAlert("¡Éxito!", "La nota ha sido eliminada correctamente.", "success");
+        showAlert("¡Eliminado!", "La nota ha sido eliminada correctamente.", "success");
       }
     } catch (error) {
       console.error("Error al borrar nota:", error);
       setDeleteModalVisible(false);
-      showAlert("¡Error!", "No se pudo eliminar la nota.", "error");
+      showAlert("Atención", "No se pudo eliminar la nota.", "error");
+    }
+  };
+
+  // Abrir modal de edición con los datos de la nota
+  const openEditModal = (nota: NotaCoreano) => {
+    setEditingNote(nota);
+    setEditTema(nota.tema);
+    setEditEmoji(nota.emoji || '');
+    setEditSignificado(nota.significado);
+    setEditModalVisible(true);
+  };
+
+  // Guardar la edición o cambio de categoría
+  const handleSaveEdit = async () => {
+    if (!editingNote) return;
+
+    const nuevoTema = editTema.trim() || 'General';
+    const nuevoEmoji = editEmoji.trim() || '📁';
+    const nuevoSignificado = editSignificado.trim() || editingNote.significado;
+
+    try {
+      const dataJSON = await AsyncStorage.getItem('@korean_notes_data');
+      if (!dataJSON) return;
+
+      let notas: NotaCoreano[] = JSON.parse(dataJSON);
+
+      const noteIndex = notas.findIndex(
+        n => n.palabraCoreana === editingNote.palabraCoreana && n.tema === editingNote.tema
+      );
+
+      if (noteIndex > -1) {
+        notas[noteIndex] = {
+          ...notas[noteIndex],
+          tema: nuevoTema,
+          emoji: nuevoEmoji,
+          significado: nuevoSignificado,
+        };
+
+        // Si se cambió el emoji de una categoría existente, actualizarlo en el grupo
+        notas = notas.map(n => n.tema === nuevoTema ? { ...n, emoji: nuevoEmoji } : n);
+
+        await AsyncStorage.setItem('@korean_notes_data', JSON.stringify(notas));
+        await loadNotes();
+        
+        // Expandir la carpeta de destino para ver los cambios
+        setExpandedThemes(prev => ({ ...prev, [nuevoTema]: true }));
+
+        setEditModalVisible(false);
+        showAlert("¡Actualizado!", "La palabra fue movida/modificada exitosamente.", "success");
+      }
+    } catch (error) {
+      console.error("Error al actualizar la nota:", error);
+      setEditModalVisible(false);
+      showAlert("Atención", "No se pudieron guardar los cambios.", "error");
     }
   };
 
@@ -170,6 +232,14 @@ export default function ExploreScreen() {
                             <Ionicons name="information-circle-outline" size={20} color="#208AEF" />
                           </TouchableOpacity>
 
+                          {/* Botón para Editar o Mover Categoría */}
+                          <TouchableOpacity 
+                            onPress={() => openEditModal(item)} 
+                            style={styles.actionIcon}
+                          >
+                            <Ionicons name="create-outline" size={19} color="#2ecc71" />
+                          </TouchableOpacity>
+
                           <TouchableOpacity 
                             onPress={() => confirmDelete(tema, index)} 
                             style={styles.actionIcon}
@@ -197,7 +267,7 @@ export default function ExploreScreen() {
         </View>
       )}
 
-      {/* Modales */}
+      {/* MODAL: Guía de Pronunciación */}
       <Modal transparent={true} visible={infoModalVisible} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -210,6 +280,7 @@ export default function ExploreScreen() {
         </View>
       </Modal>
 
+      {/* MODAL: Confirmar Eliminación */}
       <Modal transparent={true} visible={deleteModalVisible} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -227,6 +298,7 @@ export default function ExploreScreen() {
         </View>
       </Modal>
 
+      {/* MODAL: Alertas Generales */}
       <Modal transparent={true} visible={alertModalVisible} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -244,97 +316,157 @@ export default function ExploreScreen() {
         </View>
       </Modal>
 
+      {/* MODAL: Editar o Mover Categoría con Lista de Categorías Existentes */}
+      <Modal transparent={true} visible={editModalVisible} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitleEdit}>✏️ Editar o Mover Palabra</Text>
+            <Text style={[styles.modalMessage, { marginBottom: 10 }]}>
+              Selecciona o escribe la categoría para "{editingNote?.palabraCoreana}":
+            </Text>
+
+            <Text style={styles.inputLabel}>Mover a una categoría existente:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 40, marginBottom: 12, width: '100%' }}>
+              {Object.keys(temasMap).map((cat) => (
+                <TouchableOpacity 
+                  key={cat} 
+                  style={{ 
+                    backgroundColor: editTema === cat ? '#208AEF' : '#222', 
+                    paddingHorizontal: 12, 
+                    paddingVertical: 6, 
+                    borderRadius: 8, 
+                    marginRight: 6, 
+                    borderWidth: 1, 
+                    borderColor: editTema === cat ? '#208AEF' : '#333', 
+                    justifyContent: 'center' 
+                  }}
+                  onPress={() => {
+                    setEditTema(cat);
+                    setEditEmoji(temasMap[cat][0]?.emoji || '📁');
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
+                    {temasMap[cat][0]?.emoji || '📁'} {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={styles.inputLabel}>Nombre de Categoría / Tema:</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editTema}
+              onChangeText={setEditTema}
+              placeholder="Ej: Verbos, Comida..."
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Emoji:</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editEmoji}
+              onChangeText={setEditEmoji}
+              placeholder="Emoji..."
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Significado en Español:</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editSignificado}
+              onChangeText={setEditSignificado}
+              placeholder="Significado..."
+              placeholderTextColor="#666"
+            />
+
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.modalButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonSave} onPress={handleSaveEdit}>
+                <Text style={styles.modalButtonText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: 
-  { 
+  container: { 
     flex: 1, 
     backgroundColor: '#000' 
   },
-  contentContainer: 
-  { 
+  contentContainer: { 
     padding: 20, 
     paddingBottom: 60 
   },
-  header: 
-  { 
+  header: { 
     marginTop: 40, 
     marginBottom: 20, 
     paddingHorizontal: 4 
   },
-  title: 
-  { 
+  title: { 
     fontSize: 28, 
     fontWeight: 'bold', 
     color: '#fff', 
     marginBottom: 6 
   },
-  subtitle: 
-  { 
+  subtitle: { 
     fontSize: 14, 
     color: '#888' 
   },
-  sectionsWrapper: 
-  { 
+  sectionsWrapper: { 
     gap: 14 
   },
-  folderCard: 
-  {
+  folderCard: {
     backgroundColor: '#121212',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#262626',
     overflow: 'hidden',
   },
-  folderHeader: 
-  {
+  folderHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  folderTitleRow: 
-  {
+  folderTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  folderEmoji: 
-  {
+  folderEmoji: {
     fontSize: 20,
   },
-  folderTitleText: 
-  {
+  folderTitleText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  emptyContainer: 
-  { 
+  emptyContainer: { 
     marginTop: 100, 
     alignItems: 'center', 
     paddingHorizontal: 20 
   },
-  emptyText: 
-  { 
+  emptyText: { 
     color: '#fff', 
     fontSize: 18, 
     fontWeight: '600', 
     marginBottom: 8, 
     textAlign: 'center' 
   },
-  emptySubtext: 
-  { 
+  emptySubtext: { 
     color: '#666', 
     fontSize: 14, 
     textAlign: 'center' 
   },
-  cardsList: 
-  { 
+  cardsList: { 
     gap: 12, 
     padding: 14, 
     borderTopWidth: 1, 
@@ -342,8 +474,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a',
     width: '100%' 
   },
-  card: 
-  { 
+  card: { 
     backgroundColor: '#161616', 
     borderRadius: 12, 
     padding: 16, 
@@ -353,8 +484,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative'
   },
-  cardActions: 
-  {
+  cardActions: {
     position: 'absolute',
     top: 12,
     right: 12,
@@ -362,67 +492,58 @@ const styles = StyleSheet.create({
     gap: 8,
     zIndex: 10
   },
-  actionIcon: 
-  {
+  actionIcon: {
     padding: 4,
     backgroundColor: '#202020',
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#333'
   },
-  wordHeader: 
-  { 
+  wordHeader: { 
     flexDirection: 'column',
     alignItems: 'flex-start',
     gap: 4,
     marginBottom: 12,
-    paddingRight: 60,
+    paddingRight: 80,
     borderBottomWidth: 1,
     borderBottomColor: '#222',
     paddingBottom: 10
   },
-  koreanWord: 
-  { 
+  koreanWord: { 
     fontSize: 20, 
     fontWeight: 'bold', 
     color: '#208AEF' 
   },
-  spanishMeaning: 
-  { 
+  spanishMeaning: { 
     fontSize: 15, 
     fontWeight: '500', 
     color: '#fff', 
     flexWrap: 'wrap' 
   },
-  exampleContainer: 
-  { 
+  exampleContainer: { 
     gap: 6, 
     backgroundColor: '#111', 
     padding: 10, 
     borderRadius: 8 
   },
-  exampleKorean: 
-  { 
+  exampleKorean: { 
     fontSize: 14, 
     color: '#eee', 
     flexWrap: 'wrap' 
   },
-  exampleSpanish: 
-  { 
+  exampleSpanish: { 
     fontSize: 13, 
     color: '#aaa', 
     flexWrap: 'wrap' 
   },
-  modalOverlay: 
-  { 
+  modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(0,0,0,0.8)', 
     justifyContent: 'center', 
     alignItems: 'center', 
     padding: 20 
   },
-  modalContainer: 
-  { 
+  modalContainer: { 
     backgroundColor: '#181818', 
     borderRadius: 16, 
     padding: 24, 
@@ -432,44 +553,46 @@ const styles = StyleSheet.create({
     borderColor: '#333', 
     alignItems: 'center' 
   },
-  modalTitle: 
-  { 
+  modalTitle: { 
     fontSize: 20, 
     fontWeight: 'bold', 
     marginBottom: 12 
   },
-  modalTitleInfo: 
-  { 
+  modalTitleInfo: { 
     fontSize: 20, 
     fontWeight: 'bold', 
     color: '#208AEF', 
     marginBottom: 12, 
     textAlign: 'center' 
   },
-  modalTitleError: 
-  { 
+  modalTitleError: { 
     fontSize: 20, 
     fontWeight: 'bold', 
     color: '#e74c3c', 
     marginBottom: 12, 
     textAlign: 'center' 
   },
-  modalMessage: 
-  { 
+  modalTitleEdit: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    color: '#2ecc71', 
+    marginBottom: 8, 
+    textAlign: 'center' 
+  },
+  modalMessage: { 
     color: '#ddd', 
     fontSize: 15, 
     textAlign: 'center', 
     marginBottom: 20, 
     lineHeight: 22 
   },
-  modalButtonsRow: 
-  { 
+  modalButtonsRow: { 
     flexDirection: 'row', 
     gap: 12, 
-    width: '100%' 
+    width: '100%',
+    marginTop: 10
   },
-  modalButtonPrimary: 
-  { 
+  modalButtonPrimary: { 
     backgroundColor: '#208AEF', 
     paddingVertical: 12, 
     paddingHorizontal: 30, 
@@ -477,26 +600,49 @@ const styles = StyleSheet.create({
     width: '100%', 
     alignItems: 'center' 
   },
-  modalButtonCancel: 
-  { 
+  modalButtonCancel: { 
     flex: 1, 
     backgroundColor: '#333', 
     paddingVertical: 12, 
     borderRadius: 10, 
     alignItems: 'center' 
   },
-  modalButtonDelete: 
-  { 
+  modalButtonDelete: { 
     flex: 1, 
     backgroundColor: '#e74c3c', 
     paddingVertical: 12, 
     borderRadius: 10, 
     alignItems: 'center' 
   },
-  modalButtonText: 
-  { 
+  modalButtonSave: { 
+    flex: 1, 
+    backgroundColor: '#2ecc71', 
+    paddingVertical: 12, 
+    borderRadius: 10, 
+    alignItems: 'center' 
+  },
+  modalButtonText: { 
     color: '#fff', 
     fontWeight: 'bold', 
     fontSize: 15 
+  },
+  inputLabel: {
+    color: '#aaa',
+    fontSize: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+    fontWeight: '600'
+  },
+  editInput: {
+    width: '100%',
+    backgroundColor: '#222',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    marginBottom: 12
   }
 });
