@@ -4,14 +4,17 @@ import {
   KeyboardAvoidingView, Platform, Modal, ScrollView, TouchableWithoutFeedback, Keyboard, Animated 
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { styles } from '../styles';
 
 const STORAGE_KEY = '@korean_notes_data';
 
-// --- Configuración Segura para Groq (exclusivamente desde .env) ---
+// --- Configuración Dinámica para Groq ---
 const getGroqConfig = () => {
-  const apiKey = (process.env.EXPO_PUBLIC_GROQ_API_KEY || "").trim();
-  const model = (process.env.EXPO_PUBLIC_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
+  const extra = Constants.expoConfig?.extra || {};
+  
+  const apiKey = (extra.EXPO_PUBLIC_GROQ_API_KEY || process.env.EXPO_PUBLIC_GROQ_API_KEY || "").trim();
+  const model = (extra.EXPO_PUBLIC_GROQ_MODEL || process.env.EXPO_PUBLIC_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
 
   return { apiKey, model };
 };
@@ -21,10 +24,8 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [lastSaved, setLastSaved] = useState<any | null>(null);
 
-  // Animación de desvanecimiento para la tarjeta de vista previa
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Modal de Alertas
   const [modalVisible, setModalVisible] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
@@ -37,7 +38,6 @@ export default function HomeScreen() {
     setModalVisible(true);
   };
 
-  // Mostrar vista previa con Fade In y desvanecer tras 8 segundos (más tiempo para leer)
   const triggerLastSavedAnimation = (data: any) => {
     setLastSaved(data);
     fadeAnim.setValue(0);
@@ -48,7 +48,6 @@ export default function HomeScreen() {
       useNativeDriver: true,
     }).start();
 
-    // Aumentado a 8 segundos para que dé tiempo de verla con calma
     setTimeout(() => {
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -60,7 +59,6 @@ export default function HomeScreen() {
     }, 8000);
   };
 
-  // Conversor de errores técnicos a mensajes amigables
   const getFriendlyErrorMessage = (errorMsg: string): string => {
     const lower = errorMsg.toLowerCase();
     if (lower.includes('api key') || lower.includes('unauthorized') || lower.includes('401')) {
@@ -153,7 +151,6 @@ export default function HomeScreen() {
       const existingDataJSON = await AsyncStorage.getItem(STORAGE_KEY);
       const existingData = existingDataJSON ? JSON.parse(existingDataJSON) : [];
       
-      // Validación de duplicados
       const palabraNueva = parsedData.palabraCoreana.trim().toLowerCase();
       const yaExiste = existingData.some(
         (nota: any) => nota.palabraCoreana.trim().toLowerCase() === palabraNueva
@@ -213,7 +210,6 @@ export default function HomeScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Vista previa limpia puramente informativa con mayor duración */}
             {lastSaved && (
               <Animated.View style={[styles.card, { marginTop: 24, opacity: fadeAnim }]}>
                 <Text style={styles.cardTitle}>
@@ -227,7 +223,6 @@ export default function HomeScreen() {
         </ScrollView>
       </TouchableWithoutFeedback>
 
-      {/* Modal de Alerta General */}
       <Modal transparent={true} visible={modalVisible} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>

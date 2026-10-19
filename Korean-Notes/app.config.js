@@ -1,0 +1,52 @@
+import 'dotenv/config';
+
+export default {
+  expo: {
+    name: "Korean-Notes",
+    slug: "Korean-Notes",
+    version: "2.5",
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: "koreannotes",
+    userInterfaceStyle: "automatic",
+    ios: {
+      icon: "./assets/images/icon.png"
+    },
+    android: {
+      adaptiveIcon: {
+        backgroundColor: "#000000",
+        foregroundImage: "./assets/images/android-icon-foreground.png",
+        backgroundImage": "./assets/images/android-icon-background.png"
+      },
+      predictiveBackGestureEnabled: false,
+      package: "com.kimycompany.KoreanNotes"
+    },
+    web: {
+      output: "static",
+      favicon: "./assets/images/favicon.png"
+    },
+    plugins: [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#000000",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ]
+    ],
+    experiments: {
+      typedRoutes: true,
+      reactCompiler: true
+    },
+    extra: {
+      router: {},
+      eas: {
+        projectId: "1dbb19ae-d4f3-4409-b0d8-d5185a361a27"
+      },
+      EXPO_PUBLIC_GROQ_API_KEY: process.env.EXPO_PUBLIC_GROQ_API_KEY,
+      EXPO_PUBLIC_GROQ_MODEL: process.env.EXPO_PUBLIC_GROQ_MODEL || "qwen/qwen3.8-27b"
+    }
+  }
+};
