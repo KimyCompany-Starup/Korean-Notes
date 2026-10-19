@@ -1,10 +1,10 @@
-import 'dotenv/config';
+require('dotenv').config();
 
-export default {
+module.exports = {
   expo: {
     name: "Korean-Notes",
     slug: "Korean-Notes",
-    version: "2.5",
+    version: "2.2",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "koreannotes",
@@ -16,7 +16,7 @@ export default {
       adaptiveIcon: {
         backgroundColor: "#000000",
         foregroundImage: "./assets/images/android-icon-foreground.png",
-        backgroundImage": "./assets/images/android-icon-background.png"
+        backgroundImage: "./assets/images/android-icon-background.png"
       },
       predictiveBackGestureEnabled: false,
       package: "com.kimycompany.KoreanNotes"
