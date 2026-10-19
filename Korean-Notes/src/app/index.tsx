@@ -61,16 +61,13 @@ export default function HomeScreen() {
 
   const getFriendlyErrorMessage = (errorMsg: string): string => {
     const lower = errorMsg.toLowerCase();
-    if (lower.includes('api key') || lower.includes('unauthorized') || lower.includes('401')) {
-      return "Hubo un inconveniente con el servicio de organización. Inténtalo de nuevo más tarde.";
-    }
     if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed to fetch')) {
-      return "No pudimos conectarnos a la red. Revisa tu conexión a internet e inténtalo nuevamente.";
+      return "No pudimos conectarnos a la red. Por favor, revisa tu conexión a internet e inténtalo nuevamente.";
     }
     if (lower.includes('rate limit') || lower.includes('429')) {
-      return "El servicio está algo saturado en este momento. Espera unos segundos e inténtalo de nuevo.";
+      return "El servicio está procesando muchas solicitudes. Espera unos segundos e inténtalo de nuevo.";
     }
-    return "No pudimos procesar la palabra en este momento. Inténtalo otra vez en unos instantes.";
+    return "No pudimos procesar tu nota en este momento. Por favor, inténtalo de nuevo en unos instantes.";
   };
 
   const handleSaveWord = async () => {
@@ -83,8 +80,8 @@ export default function HomeScreen() {
     const { apiKey, model } = getGroqConfig();
     if (!apiKey) {
       showAlert(
-        "Servicio No Disponible", 
-        "No fue posible conectar con el servicio en este momento. Revisa tu archivo .env.", 
+        "Servicio no disponible", 
+        "No pudimos conectar con el servicio de organización en este momento. Inténtalo más tarde.", 
         "error"
       );
       return;
@@ -93,87 +90,109 @@ export default function HomeScreen() {
     setLoading(true);
     Keyboard.dismiss();
 
-    try {
-      const prompt = `
-        Analiza la siguiente palabra, frase o nota de coreano: "${cleanInput}".
-        Clasifícala en una categoría temática adecuada en Español (por ejemplo: Comida, Verbos, Saludos, Viajes, Gramática, etc.).
-        Asigna también un único emoji representativo para ese tema (por ejemplo 👋 para Saludos, 🍔 para Comida). Si no hay un emoji claro, déjalo en blanco.
-        Para la "pronunciacion", redacta una guía completa, ordenada y estructurada que incluya obligatoriamente:
-        1. La romanización y pronunciación de la palabra principal de forma fluida y continua entre paréntesis.
-        2. La romanización y pronunciación de la oración o frase de ejemplo completa de forma fluida y continua entre paréntesis.
-        3. Breves tips de fonética, reglas de 받침 (batchim) o aclaraciones útiles si aplican.
-        Escríbelo de forma muy clara indicando a qué corresponde cada una.
+    const prompt = `
+      Analiza la siguiente palabra, frase o nota de coreano: "${cleanInput}".
+      Clasifícala en una categoría temática adecuada en Español (por ejemplo: Comida, Verbos, Saludos, Viajes, Gramática, etc.).
+      Asigna también un único emoji representativo para ese tema (por ejemplo 👋 para Saludos, 🍔 para Comida). Si no hay un emoji claro, déjalo en blanco.
+      Para la "pronunciacion", redacta una guía completa, ordenada y estructurada que incluya obligatoriamente:
+      1. La romanización y pronunciación de la palabra principal de forma fluida y continua entre paréntesis.
+      2. La romanización y pronunciación de la oración o frase de ejemplo completa de forma fluida y continua entre paréntesis.
+      3. Breves tips de fonética, reglas de 받침 (batchim) o aclaraciones útiles si aplican.
+      Escríbelo de forma muy clara indicando a qué corresponde cada una.
 
-        Devuelve la respuesta estrictamente en formato JSON plano con las siguientes llaves exactas y sin texto adicional ni bloques de código markdown:
-        {
-          "tema": "Nombre del tema",
-          "emoji": "Emoji representativo o vacío",
-          "palabraCoreana": "La palabra o frase en hangul (coreano)",
-          "significado": "Significado en español",
-          "fraseEjemplo": "Oración corta de ejemplo en coreano usando la palabra",
-          "significadoFrase": "Traducción de la frase al español",
-          "pronunciacion": "Guía detallada explicando la romanización y pronunciación tanto de la palabra como de la frase de ejemplo"
-        }
-      `;
-
-      const response = await fetch(
-        'https://api.groq.com/openai/v1/chat/completions',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              { role: "system", content: "Eres un asistente experto en coreano que responde únicamente en formato JSON plano sin bloques de código adicionales." },
-              { role: "user", content: prompt }
-            ],
-            response_format: { type: "json_object" },
-            temperature: 0.3
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error?.message || "Error al comunicarse con la API de Groq");
+      Devuelve la respuesta estrictamente en formato JSON plano con las siguientes llaves exactas y sin texto adicional ni bloques de código markdown:
+      {
+        "tema": "Nombre del tema",
+        "emoji": "Emoji representativo o vacío",
+        "palabraCoreana": "La palabra o frase en hangul (coreano)",
+        "significado": "Significado en español",
+        "fraseEjemplo": "Oración corta de ejemplo en coreano usando la palabra",
+        "significadoFrase": "Traducción de la frase al español",
+        "pronunciacion": "Guía detallada explicando la romanización y pronunciación tanto de la palabra como de la frase de ejemplo"
       }
+    `;
 
-      const textResponse = data.choices?.[0]?.message?.content;
-      if (!textResponse) throw new Error("No se obtuvo respuesta de la IA");
+    // --- Lógica de 6 Reintentos Automáticos ---
+    const maxRetries = 6;
+    let attempt = 0;
+    let success = false;
+    let lastError: any = null;
 
-      const cleanedJsonString = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsedData = JSON.parse(cleanedJsonString);
+    while (attempt < maxRetries && !success) {
+      try {
+        attempt++;
 
-      const existingDataJSON = await AsyncStorage.getItem(STORAGE_KEY);
-      const existingData = existingDataJSON ? JSON.parse(existingDataJSON) : [];
-      
-      const palabraNueva = parsedData.palabraCoreana.trim().toLowerCase();
-      const yaExiste = existingData.some(
-        (nota: any) => nota.palabraCoreana.trim().toLowerCase() === palabraNueva
-      );
+        const response = await fetch(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [
+                { role: "system", content: "Eres un asistente experto en coreano que responde únicamente en formato JSON plano sin bloques de código adicionales." },
+                { role: "user", content: prompt }
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.3
+            }),
+          }
+        );
 
-      if (yaExiste) {
-        showAlert("Palabra duplicada", `"${parsedData.palabraCoreana}" ya está guardada en tus notas.`, "error");
-        return;
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error?.message || "Error de conexión");
+        }
+
+        const textResponse = data.choices?.[0]?.message?.content;
+        if (!textResponse) throw new Error("Respuesta no válida");
+
+        const cleanedJsonString = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsedData = JSON.parse(cleanedJsonString);
+
+        const existingDataJSON = await AsyncStorage.getItem(STORAGE_KEY);
+        const existingData = existingDataJSON ? JSON.parse(existingDataJSON) : [];
+        
+        const palabraNueva = parsedData.palabraCoreana.trim().toLowerCase();
+        const yaExiste = existingData.some(
+          (nota: any) => nota.palabraCoreana.trim().toLowerCase() === palabraNueva
+        );
+
+        if (yaExiste) {
+          showAlert("Palabra duplicada", `"${parsedData.palabraCoreana}" ya está guardada en tus notas.`, "error");
+          setLoading(false);
+          return;
+        }
+
+        const newData = [parsedData, ...existingData];
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+
+        setInputWord('');
+        triggerLastSavedAnimation(parsedData);
+        showAlert("¡Guardado!", "Palabra organizada y guardada correctamente.", "success");
+        
+        success = true;
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`Intento ${attempt} fallido en Korean-Notes. Reintentando...`);
+
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
-
-      const newData = [parsedData, ...existingData];
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
-
-      setInputWord('');
-      triggerLastSavedAnimation(parsedData);
-      showAlert("¡Guardado!", "Palabra organizada y guardada correctamente.", "success");
-    } catch (error: any) {
-      console.error("Error al procesar:", error);
-      const friendlyMsg = getFriendlyErrorMessage(error.message || "");
-      showAlert("Atención", friendlyMsg, "error");
-    } finally {
-      setLoading(false);
     }
+
+    if (!success) {
+      console.error("Error tras 6 intentos:", lastError);
+      const friendlyMsg = getFriendlyErrorMessage(lastError?.message || "");
+      showAlert("¡Ups!", friendlyMsg, "error");
+    }
+
+    setLoading(false);
   };
 
   return (
