@@ -4,7 +4,7 @@ module.exports = {
   expo: {
     name: "Korean-Notes",
     slug: "Korean-Notes",
-    version: "2.6",
+    version: "2.7",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "koreannotes",
